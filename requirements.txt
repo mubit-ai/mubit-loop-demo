@@ -1,0 +1,2 @@
+mubit-sdk>=0.13.1
+openai>=1.50

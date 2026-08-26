@@ -1,0 +1,259 @@
+
+  MUBIT FEEDBACK-LOOP DEMO
+  model gpt-5-mini · mubit http://127.0.0.1:3970 · run loop-demo-5eb3e78f
+  The agent submits expenses to an internal API. It was never given the
+  API's validation rules. Every -> and <- line is real data in or out.
+
+  ==========================================================================
+  ACT 1 — COLD START
+  No stored rules. The API teaches by rejection.
+  ==========================================================================
+
+  E-01  Team lunch with the client at Nobu Bombay, 12 Aug, $84.20
+      recall -> query="expense API submission formatting rules"  entry_types=[lesson]
+      recall <- 0 stored rules (cold start)
+         llm    draft 1 — gpt-5-mini
+      submit -> POST /expenses {"date": "2026-08-12", "amount": 84.2, "currency": "USD", "category": "Meals and Entertainment", "vendor": "Nobu Bombay", "description": "Team lunch with the client", "attendees": ["team", ... false}
+         api <- 422 rejected — 10 field error(s)
+         api    amount: unknown field; allowed fields: merchant, date, amount_minor, category, needs_approval, note
+         api    currency: unknown field; allowed fields: merchant, date, amount_minor, category, needs_approval, note
+         api    vendor: unknown field; allowed fields: merchant, date, amount_minor, category, needs_approval, note
+         api    description: unknown field; allowed fields: merchant, date, amount_minor, category, needs_approval, note
+         api    attendees: unknown field; allowed fields: merchant, date, amount_minor, category, needs_approval, note
+         api    receipt_included: unknown field; allowed fields: merchant, date, amount_minor, category, needs_approval, note
+         api    merchant: required; non-empty string
+         api    date: expected format DD.MM.YYYY
+         api    amount_minor: required; integer amount in minor units (cents)
+         api    category: must be one of MEALS, TRAVEL, SUPPLIES, SOFTWARE, OTHER
+     outcome -> record_step_outcome {"step_id": "E-01/try1", "step_name": "submit_expense", "outcome": "failure", "signal": 0.2, "rationale": "E-01 rejected: amount, currency, vendor, descriptio ... gory"}
+         llm    draft 2 — gpt-5-mini (rejection attached)
+      submit -> POST /expenses {"merchant": "Nobu Bombay", "date": "12.08.2026", "amount_minor": 8420, "category": "MEALS", "needs_approval": false, "note": "Team lunch with the client"}
+         api <- 201 accepted  id=EXP-1042
+     outcome -> record_step_outcome {"step_id": "E-01/try2", "step_name": "submit_expense", "outcome": "success", "signal": 0.9, "rationale": "E-01 accepted on attempt 2"}
+         llm    distill — 5 rule(s) from the rejections
+    remember -> lesson "[rule:schema] Do not include unknown fields such as amount, attendees, currency, description, receipt_included, or vendor in the payload."  upsert_key=rule:schema
+    remember -> lesson "[rule:merchant] Provide a non-empty string for merchant."  upsert_key=rule:merchant
+    remember -> lesson "[rule:date] Format the date as DD.MM.YYYY."  upsert_key=rule:date
+    remember -> lesson "[rule:amount] Provide amount_minor as an integer in minor units (cents)."  upsert_key=rule:amount
+    remember -> lesson "[rule:category] Set category to one of MEALS, TRAVEL, SUPPLIES, SOFTWARE, OTHER."  upsert_key=rule:category
+           =    accepted on try 2  ·  5 rule(s) learned
+
+  E-02  Return flight BOM-SFO for the customer visit, booked 14 Aug, $612.50
+      recall -> query="expense API submission formatting rules"  entry_types=[lesson]
+      recall <- 5 stored rules  [amount 0.50]  [category 0.50]  [date 0.50]  [merchant 0.50]  [schema 0.50]
+         llm    draft 1 — gpt-5-mini (rules in prompt)
+      submit -> POST /expenses {"date": "14.08.2026", "amount_minor": 61250, "merchant": "Airline", "category": "TRAVEL"}
+         api <- 422 rejected — 1 field error(s)
+         api    needs_approval: required: true when amount_minor > 20000
+     outcome -> record_step_outcome {"step_id": "E-02/try1", "step_name": "submit_expense", "outcome": "failure", "signal": 0.2, "rationale": "E-02 rejected: needs_approval"}
+         llm    draft 2 — gpt-5-mini (rejection attached)
+      submit -> POST /expenses {"date": "14.08.2026", "amount_minor": 61250, "merchant": "Airline", "category": "TRAVEL", "needs_approval": true}
+         api <- 201 accepted  id=EXP-1043
+     outcome -> record_step_outcome {"step_id": "E-02/try2", "step_name": "submit_expense", "outcome": "success", "signal": 0.9, "rationale": "E-02 accepted on attempt 2"}
+     outcome -> record_outcome {"reference_id": "fb25414d-0ae1-4d0c-86d7-ca43d20ba385", "outcome": "success", "signal": 0.9, "rationale": "E-02: applied, submission accepted"}
+     outcome <- [amount] confidence 0.50 -> 0.59  (reinforcement 1)
+     outcome -> record_outcome {"reference_id": "64a97a4d-07b8-44fa-8800-b897d6f01a88", "outcome": "success", "signal": 0.9, "rationale": "E-02: applied, submission accepted"}
+     outcome <- [schema] confidence 0.50 -> 0.59  (reinforcement 1)
+     outcome -> record_outcome {"reference_id": "8e8286ca-3c18-40b3-8515-155cb9ef68cd", "outcome": "success", "signal": 0.9, "rationale": "E-02: applied, submission accepted"}
+     outcome <- [date] confidence 0.50 -> 0.59  (reinforcement 1)
+     outcome -> record_outcome {"reference_id": "826e9243-db1e-495e-94cc-60f6deac97a5", "outcome": "success", "signal": 0.9, "rationale": "E-02: applied, submission accepted"}
+     outcome <- [merchant] confidence 0.50 -> 0.59  (reinforcement 1)
+     outcome -> record_outcome {"reference_id": "c74d01e6-079c-4bfa-a741-0b5bfa59e79d", "outcome": "success", "signal": 0.9, "rationale": "E-02: applied, submission accepted"}
+     outcome <- [category] confidence 0.50 -> 0.59  (reinforcement 1)
+         llm    distill — 1 rule(s) from the rejections
+    remember -> lesson "[rule:approval] Set needs_approval to true when amount_minor is greater than 20000."  upsert_key=rule:approval
+           =    accepted on try 2  ·  1 rule(s) learned  ·  reused: amount, category, date, merchant, schema
+
+  E-03  A 27-inch monitor for the new hire, ordered 18 Aug, $189.00
+      recall -> query="expense API submission formatting rules"  entry_types=[lesson]
+      recall <- 6 stored rules  [amount 0.59]  [approval 0.50]  [category 0.59]  [date 0.59]  [merchant 0.59]  [schema 0.59]
+         llm    draft 1 — gpt-5-mini (rules in prompt)
+      submit -> POST /expenses {"amount_minor": 18900, "merchant": "27-inch Monitor Supplier", "date": "18.08.2026", "needs_approval": false, "category": "SUPPLIES"}
+         api <- 201 accepted  id=EXP-1044
+     outcome -> record_step_outcome {"step_id": "E-03/try1", "step_name": "submit_expense", "outcome": "success", "signal": 0.9, "rationale": "E-03 accepted on attempt 1"}
+     outcome -> record_outcome {"reference_id": "64a97a4d-07b8-44fa-8800-b897d6f01a88", "outcome": "success", "signal": 0.9, "rationale": "E-03: applied, submission accepted"}
+     outcome <- [schema] confidence 0.59 -> 0.68  (reinforcement 2)
+     outcome -> record_outcome {"reference_id": "fb25414d-0ae1-4d0c-86d7-ca43d20ba385", "outcome": "success", "signal": 0.9, "rationale": "E-03: applied, submission accepted"}
+     outcome <- [amount] confidence 0.59 -> 0.68  (reinforcement 2)
+     outcome -> record_outcome {"reference_id": "826e9243-db1e-495e-94cc-60f6deac97a5", "outcome": "success", "signal": 0.9, "rationale": "E-03: applied, submission accepted"}
+     outcome <- [merchant] confidence 0.59 -> 0.68  (reinforcement 2)
+     outcome -> record_outcome {"reference_id": "8e8286ca-3c18-40b3-8515-155cb9ef68cd", "outcome": "success", "signal": 0.9, "rationale": "E-03: applied, submission accepted"}
+     outcome <- [date] confidence 0.59 -> 0.68  (reinforcement 2)
+     outcome -> record_outcome {"reference_id": "83d51a87-37ee-49bd-8e84-72dfc8ab99ca", "outcome": "success", "signal": 0.9, "rationale": "E-03: applied, submission accepted"}
+     outcome <- [approval] confidence 0.50 -> 0.59  (reinforcement 1)
+     outcome -> record_outcome {"reference_id": "c74d01e6-079c-4bfa-a741-0b5bfa59e79d", "outcome": "success", "signal": 0.9, "rationale": "E-03: applied, submission accepted"}
+     outcome <- [category] confidence 0.59 -> 0.68  (reinforcement 2)
+           =    accepted on try 1  ·  reused: amount, approval, category, date, merchant, schema
+
+         act    ACT 1 — COLD START: 1/3 accepted first try · 5 submissions · 7 LLM calls · 1990 tokens
+
+  MEMORY  lessons in run loop-demo-5eb3e78f
+    amount    Provide amount_minor as an integer in minor units (cents).   0.68  #######---  medium — applied · x2
+    approval  Set needs_approval to true when amount_minor is greater...   0.59  ######----  medium — applied · x1
+    category  Set category to one of MEALS, TRAVEL, SUPPLIES, SOFTWAR...   0.68  #######---  medium — applied · x2
+    date      Format the date as DD.MM.YYYY.                               0.68  #######---  medium — applied · x2
+    merchant  Provide a non-empty string for merchant.                     0.68  #######---  medium — applied · x2
+    schema    Do not include unknown fields such as amount, attendees...   0.68  #######---  medium — applied · x2
+    band: >= 0.75 trusted · >= 0.5 applied in prompts · < 0.5 quarantined (kept, not applied)
+     reflect -> last_n_items=24  (server-side distillation)
+     reflect <- skipped (HTTPConnectionPool(host='127.0.0.1', port=3970): Read timed out. (read timeout=30.0))
+
+  ==========================================================================
+  ACT 2 — WARM
+  Same API, new expenses. Stored rules ride in every prompt.
+  ==========================================================================
+
+  E-04  Airport taxi, 21 Aug, $23.75
+      recall -> query="expense API submission formatting rules"  entry_types=[lesson]
+      recall <- 6 stored rules  [amount 0.68]  [approval 0.59]  [category 0.68]  [date 0.68]  [merchant 0.68]  [schema 0.68]
+         llm    draft 1 — gpt-5-mini (rules in prompt)
+      submit -> POST /expenses {"amount_minor": 2375, "merchant": "Airport Taxi", "date": "21.08.2026", "needs_approval": false, "category": "TRAVEL"}
+         api <- 201 accepted  id=EXP-1045
+     outcome -> record_step_outcome {"step_id": "E-04/try1", "step_name": "submit_expense", "outcome": "success", "signal": 0.9, "rationale": "E-04 accepted on attempt 1"}
+     outcome -> record_outcome {"reference_id": "64a97a4d-07b8-44fa-8800-b897d6f01a88", "outcome": "success", "signal": 0.9, "rationale": "E-04: applied, submission accepted"}
+     outcome <- [schema] confidence 0.68 -> 0.77  (reinforcement 3)
+     outcome -> record_outcome {"reference_id": "fb25414d-0ae1-4d0c-86d7-ca43d20ba385", "outcome": "success", "signal": 0.9, "rationale": "E-04: applied, submission accepted"}
+     outcome <- [amount] confidence 0.68 -> 0.77  (reinforcement 3)
+     outcome -> record_outcome {"reference_id": "826e9243-db1e-495e-94cc-60f6deac97a5", "outcome": "success", "signal": 0.9, "rationale": "E-04: applied, submission accepted"}
+     outcome <- [merchant] confidence 0.68 -> 0.77  (reinforcement 3)
+     outcome -> record_outcome {"reference_id": "8e8286ca-3c18-40b3-8515-155cb9ef68cd", "outcome": "success", "signal": 0.9, "rationale": "E-04: applied, submission accepted"}
+     outcome <- [date] confidence 0.68 -> 0.77  (reinforcement 3)
+     outcome -> record_outcome {"reference_id": "83d51a87-37ee-49bd-8e84-72dfc8ab99ca", "outcome": "success", "signal": 0.9, "rationale": "E-04: applied, submission accepted"}
+     outcome <- [approval] confidence 0.59 -> 0.68  (reinforcement 2)
+     outcome -> record_outcome {"reference_id": "c74d01e6-079c-4bfa-a741-0b5bfa59e79d", "outcome": "success", "signal": 0.9, "rationale": "E-04: applied, submission accepted"}
+     outcome <- [category] confidence 0.68 -> 0.77  (reinforcement 3)
+           =    accepted on try 1  ·  reused: amount, approval, category, date, merchant, schema
+
+  E-05  Annual design-tool subscription renewal, 22 Aug, $340.00
+      recall -> query="expense API submission formatting rules"  entry_types=[lesson]
+      recall <- 6 stored rules  [amount 0.77]  [approval 0.68]  [category 0.77]  [date 0.77]  [merchant 0.77]  [schema 0.77]
+         llm    draft 1 — gpt-5-mini (rules in prompt)
+      submit -> POST /expenses {"amount_minor": 34000, "merchant": "DesignTool LLC", "date": "22.08.2026", "needs_approval": true, "category": "SOFTWARE"}
+         api <- 201 accepted  id=EXP-1046
+     outcome -> record_step_outcome {"step_id": "E-05/try1", "step_name": "submit_expense", "outcome": "success", "signal": 0.9, "rationale": "E-05 accepted on attempt 1"}
+     outcome -> record_outcome {"reference_id": "64a97a4d-07b8-44fa-8800-b897d6f01a88", "outcome": "success", "signal": 0.9, "rationale": "E-05: applied, submission accepted"}
+     outcome <- [schema] confidence 0.77 -> 0.86  (reinforcement 4)
+     outcome -> record_outcome {"reference_id": "fb25414d-0ae1-4d0c-86d7-ca43d20ba385", "outcome": "success", "signal": 0.9, "rationale": "E-05: applied, submission accepted"}
+     outcome <- [amount] confidence 0.77 -> 0.86  (reinforcement 4)
+     outcome -> record_outcome {"reference_id": "826e9243-db1e-495e-94cc-60f6deac97a5", "outcome": "success", "signal": 0.9, "rationale": "E-05: applied, submission accepted"}
+     outcome <- [merchant] confidence 0.77 -> 0.86  (reinforcement 4)
+     outcome -> record_outcome {"reference_id": "8e8286ca-3c18-40b3-8515-155cb9ef68cd", "outcome": "success", "signal": 0.9, "rationale": "E-05: applied, submission accepted"}
+     outcome <- [date] confidence 0.77 -> 0.86  (reinforcement 4)
+     outcome -> record_outcome {"reference_id": "83d51a87-37ee-49bd-8e84-72dfc8ab99ca", "outcome": "success", "signal": 0.9, "rationale": "E-05: applied, submission accepted"}
+     outcome <- [approval] confidence 0.68 -> 0.77  (reinforcement 3)
+     outcome -> record_outcome {"reference_id": "c74d01e6-079c-4bfa-a741-0b5bfa59e79d", "outcome": "success", "signal": 0.9, "rationale": "E-05: applied, submission accepted"}
+     outcome <- [category] confidence 0.77 -> 0.86  (reinforcement 4)
+           =    accepted on try 1  ·  reused: amount, approval, category, date, merchant, schema
+
+  E-06  Team dinner after the release, 22 Aug, $156.40
+      recall -> query="expense API submission formatting rules"  entry_types=[lesson]
+      recall <- 6 stored rules  [amount 0.86]  [approval 0.77]  [category 0.86]  [date 0.86]  [merchant 0.86]  [schema 0.86]
+         llm    draft 1 — gpt-5-mini (rules in prompt)
+      submit -> POST /expenses {"amount_minor": 15640, "merchant": "Team Dinner Restaurant", "date": "22.08.2026", "needs_approval": false, "category": "MEALS"}
+         api <- 201 accepted  id=EXP-1047
+     outcome -> record_step_outcome {"step_id": "E-06/try1", "step_name": "submit_expense", "outcome": "success", "signal": 0.9, "rationale": "E-06 accepted on attempt 1"}
+     outcome -> record_outcome {"reference_id": "64a97a4d-07b8-44fa-8800-b897d6f01a88", "outcome": "success", "signal": 0.9, "rationale": "E-06: applied, submission accepted"}
+     outcome <- [schema] confidence 0.86 -> 0.95  (reinforcement 5)
+     outcome -> record_outcome {"reference_id": "fb25414d-0ae1-4d0c-86d7-ca43d20ba385", "outcome": "success", "signal": 0.9, "rationale": "E-06: applied, submission accepted"}
+     outcome <- [amount] confidence 0.86 -> 0.95  (reinforcement 5)
+     outcome -> record_outcome {"reference_id": "826e9243-db1e-495e-94cc-60f6deac97a5", "outcome": "success", "signal": 0.9, "rationale": "E-06: applied, submission accepted"}
+     outcome <- [merchant] confidence 0.86 -> 0.95  (reinforcement 5)
+     outcome -> record_outcome {"reference_id": "8e8286ca-3c18-40b3-8515-155cb9ef68cd", "outcome": "success", "signal": 0.9, "rationale": "E-06: applied, submission accepted"}
+     outcome <- [date] confidence 0.86 -> 0.95  (reinforcement 5)
+     outcome -> record_outcome {"reference_id": "83d51a87-37ee-49bd-8e84-72dfc8ab99ca", "outcome": "success", "signal": 0.9, "rationale": "E-06: applied, submission accepted"}
+     outcome <- [approval] confidence 0.77 -> 0.86  (reinforcement 4)
+     outcome -> record_outcome {"reference_id": "c74d01e6-079c-4bfa-a741-0b5bfa59e79d", "outcome": "success", "signal": 0.9, "rationale": "E-06: applied, submission accepted"}
+     outcome <- [category] confidence 0.86 -> 0.95  (reinforcement 5)
+           =    accepted on try 1  ·  reused: amount, approval, category, date, merchant, schema
+
+         act    ACT 2 — WARM: 3/3 accepted first try · 3 submissions · 3 LLM calls · 656 tokens
+
+  MEMORY  lessons in run loop-demo-5eb3e78f
+    amount    Provide amount_minor as an integer in minor units (cents).   0.95  #########-  high — trusted · x5
+    approval  Set needs_approval to true when amount_minor is greater...   0.86  #########-  high — trusted · x4
+    category  Set category to one of MEALS, TRAVEL, SUPPLIES, SOFTWAR...   0.95  #########-  high — trusted · x5
+    date      Format the date as DD.MM.YYYY.                               0.95  #########-  high — trusted · x5
+    merchant  Provide a non-empty string for merchant.                     0.95  #########-  high — trusted · x5
+    schema    Do not include unknown fields such as amount, attendees...   0.95  #########-  high — trusted · x5
+    band: >= 0.75 trusted · >= 0.5 applied in prompts · < 0.5 quarantined (kept, not applied)
+
+  ==========================================================================
+  ACT 3 — THE API CHANGES
+  The expense service deploys v2: dates switch to YYYY-MM-DD. Nobody tells the agent.
+  ==========================================================================
+
+  E-07  Client coffee at Blue Tokai, 25 Aug, $12.80
+      recall -> query="expense API submission formatting rules"  entry_types=[lesson]
+      recall <- 6 stored rules  [amount 0.95]  [approval 0.86]  [category 0.95]  [date 0.95]  [merchant 0.95]  [schema 0.95]
+         llm    draft 1 — gpt-5-mini (rules in prompt)
+      submit -> POST /expenses {"amount_minor": 1280, "merchant": "Blue Tokai", "date": "25.08.2026", "needs_approval": false, "category": "MEALS"}
+         api <- 422 rejected — 1 field error(s)
+         api    date: expected format YYYY-MM-DD
+     outcome -> record_step_outcome {"step_id": "E-07/try1", "step_name": "submit_expense", "outcome": "failure", "signal": 0.2, "rationale": "E-07 rejected: date"}
+       agent    rule(s) contradicted by the API, dropped for the retry: date
+         llm    draft 2 — gpt-5-mini (rejection attached)
+      submit -> POST /expenses {"amount_minor": 1280, "merchant": "Blue Tokai", "date": "2026-08-25", "needs_approval": false, "category": "MEALS"}
+         api <- 201 accepted  id=EXP-1048
+     outcome -> record_step_outcome {"step_id": "E-07/try2", "step_name": "submit_expense", "outcome": "success", "signal": 0.9, "rationale": "E-07 accepted on attempt 2"}
+     outcome -> record_outcome {"reference_id": "64a97a4d-07b8-44fa-8800-b897d6f01a88", "outcome": "success", "signal": 0.9, "rationale": "E-07: applied, submission accepted"}
+     outcome <- [schema] confidence 0.95 -> 1.00  (reinforcement 6)
+     outcome -> record_outcome {"reference_id": "fb25414d-0ae1-4d0c-86d7-ca43d20ba385", "outcome": "success", "signal": 0.9, "rationale": "E-07: applied, submission accepted"}
+     outcome <- [amount] confidence 0.95 -> 1.00  (reinforcement 6)
+     outcome -> record_outcome {"reference_id": "826e9243-db1e-495e-94cc-60f6deac97a5", "outcome": "success", "signal": 0.9, "rationale": "E-07: applied, submission accepted"}
+     outcome <- [merchant] confidence 0.95 -> 1.00  (reinforcement 6)
+     outcome -> record_outcome {"reference_id": "8e8286ca-3c18-40b3-8515-155cb9ef68cd", "outcome": "failure", "signal": -0.9, "rationale": "E-07: field(s) date rejected while this rule was applied"}
+     outcome <- [date] confidence 0.95 -> 0.86  (reinforcement 4)
+      retire -> delete_lesson id=8e8286ca-3c18-40b3-8515-155cb9ef68cd  — the [date] rule no longer matches the API
+     outcome -> record_outcome {"reference_id": "83d51a87-37ee-49bd-8e84-72dfc8ab99ca", "outcome": "success", "signal": 0.9, "rationale": "E-07: applied, submission accepted"}
+     outcome <- [approval] confidence 0.86 -> 0.95  (reinforcement 5)
+     outcome -> record_outcome {"reference_id": "c74d01e6-079c-4bfa-a741-0b5bfa59e79d", "outcome": "success", "signal": 0.9, "rationale": "E-07: applied, submission accepted"}
+     outcome <- [category] confidence 0.95 -> 1.00  (reinforcement 6)
+         llm    distill — 1 rule(s) from the rejections
+    remember -> lesson "[rule:date] Format the date as YYYY-MM-DD (e.g., 2026-08-25)."  upsert_key=rule:date
+           =    accepted on try 2  ·  1 rule(s) replaced  ·  reused: amount, approval, category, merchant, schema
+
+  E-08  Monitor arm for the new hire's desk, 26 Aug, $45.00
+      recall -> query="expense API submission formatting rules"  entry_types=[lesson]
+      recall <- 6 stored rules  [amount 1.00]  [approval 0.95]  [category 1.00]  [date 0.50]  [merchant 1.00]  [schema 1.00]
+         llm    draft 1 — gpt-5-mini (rules in prompt)
+      submit -> POST /expenses {"amount_minor": 4500, "merchant": "Office Supplies Co.", "needs_approval": false, "category": "SUPPLIES", "date": "2026-08-26"}
+         api <- 201 accepted  id=EXP-1049
+     outcome -> record_step_outcome {"step_id": "E-08/try1", "step_name": "submit_expense", "outcome": "success", "signal": 0.9, "rationale": "E-08 accepted on attempt 1"}
+     outcome -> record_outcome {"reference_id": "64a97a4d-07b8-44fa-8800-b897d6f01a88", "outcome": "success", "signal": 0.9, "rationale": "E-08: applied, submission accepted"}
+     outcome <- [schema] confidence 1.00 -> 1.00  (reinforcement 7)
+     outcome -> record_outcome {"reference_id": "fb25414d-0ae1-4d0c-86d7-ca43d20ba385", "outcome": "success", "signal": 0.9, "rationale": "E-08: applied, submission accepted"}
+     outcome <- [amount] confidence 1.00 -> 1.00  (reinforcement 7)
+     outcome -> record_outcome {"reference_id": "826e9243-db1e-495e-94cc-60f6deac97a5", "outcome": "success", "signal": 0.9, "rationale": "E-08: applied, submission accepted"}
+     outcome <- [merchant] confidence 1.00 -> 1.00  (reinforcement 7)
+     outcome -> record_outcome {"reference_id": "83d51a87-37ee-49bd-8e84-72dfc8ab99ca", "outcome": "success", "signal": 0.9, "rationale": "E-08: applied, submission accepted"}
+     outcome <- [approval] confidence 0.95 -> 1.00  (reinforcement 6)
+     outcome -> record_outcome {"reference_id": "c74d01e6-079c-4bfa-a741-0b5bfa59e79d", "outcome": "success", "signal": 0.9, "rationale": "E-08: applied, submission accepted"}
+     outcome <- [category] confidence 1.00 -> 1.00  (reinforcement 7)
+     outcome -> record_outcome {"reference_id": "58e3cf09-d174-4651-a849-3a19b600812b", "outcome": "success", "signal": 0.9, "rationale": "E-08: applied, submission accepted"}
+     outcome <- [date] confidence 0.50 -> 0.59  (reinforcement 1)
+           =    accepted on try 1  ·  reused: amount, approval, category, date, merchant, schema
+
+         act    ACT 3 — THE API CHANGES: 1/2 accepted first try · 3 submissions · 4 LLM calls · 983 tokens
+
+  MEMORY  lessons in run loop-demo-5eb3e78f
+    amount    Provide amount_minor as an integer in minor units (cents).   1.00  ##########  high — trusted · x7
+    approval  Set needs_approval to true when amount_minor is greater...   1.00  ##########  high — trusted · x6
+    category  Set category to one of MEALS, TRAVEL, SUPPLIES, SOFTWAR...   1.00  ##########  high — trusted · x7
+    date      Format the date as YYYY-MM-DD (e.g., 2026-08-25).            0.59  ######----  medium — applied · x1
+    merchant  Provide a non-empty string for merchant.                     1.00  ##########  high — trusted · x7
+    schema    Do not include unknown fields such as amount, attendees...   1.00  ##########  high — trusted · x7
+    band: >= 0.75 trusted · >= 0.5 applied in prompts · < 0.5 quarantined (kept, not applied)
+
+  ==========================================================================
+  SUMMARY
+  ==========================================================================
+                   tasks  first-try  submissions  LLM calls   tokens
+    act 1 cold         3        1/3            5          7     1990
+    act 2 warm         3        3/3            3          3      656
+    act 3 change       2        1/2            3          4      983
+
+  The loop: rejection -> lesson -> applied on the next task -> outcome
+  written back to the lesson. Confidence rises with each accepted reuse
+  and falls when the API contradicts a rule; a contradicted rule is
+  retired and its replacement re-earns trust. The band decides what
+  the agent applies.
