@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mubit feedback loop</title>
+<title>Mubit feedback loop — memory agent</title>
 <style>
   :root {
     --bg: #f2f4f0; --card: #ffffff; --soft: #eef0ec; --line: #e4e7e1;
@@ -101,6 +101,14 @@
     font-size: 13px; color: #6a5518;
   }
   .note-card .who { color: var(--amber); }
+  .mem-card {
+    max-width: 88%; margin: 0 0 14px; background: #f6f2fb;
+    border: 1px solid #ddcdf2; border-radius: 12px; border-top-left-radius: 3px;
+    padding: 9px 13px; font-size: 13px;
+  }
+  .mem-card .who { color: var(--purple); }
+  .mem-card .work { background: rgba(255,255,255,.75); border-color: #ddcdf2; }
+  .mem-card .mem-sum { color: #4d3d69; }
   .sys { text-align: center; color: var(--dim); font-size: 12.5px; margin: 12px auto; max-width: 64ch; }
   .sys.err { color: var(--red); }
   .sys.policy { color: var(--amber); }
@@ -175,16 +183,15 @@
     <svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/></svg>
   </div>
   <div class="titles">
-    <div class="k">Demo</div>
-    <h1>Orbit support · Mubit feedback loop</h1>
+    <div class="k">Demo · v2</div>
+    <h1>Orbit support · Mubit memory agent</h1>
   </div>
   <span class="meta" id="run-id"></span>
   <span class="meta" id="model"></span>
   <span class="spacer"></span>
   <select id="dataset" title="Ticket dataset. Switching starts a fresh run with empty memory."></select>
   <button id="run-btn">Run tickets</button>
-  <span class="pill" id="policy" title="Switch the refund policy the billing backend enforces. The agent is not told.">Policy v1</span>
-  <button id="reflect-btn" title="Server-side distillation over the recorded outcomes">Reflect</button>
+  <span class="pill" id="policy" title="Switch the refund policy the billing backend enforces. The agents are not told.">Policy v1</span>
   <button id="reset-btn">New run</button>
 </header>
 <div id="stats">
@@ -198,8 +205,9 @@
   <section id="chat-col">
     <div id="chat">
       <div class="sys">Press Run tickets to play a day of scripted customer tickets, or write
-      a customer message yourself. The agent knows nothing about this product's policies,
-      navigation, or bugs — everything it learns arrives through the loop on the right.</div>
+      a customer message yourself. Two agents work each ticket: a support agent that talks
+      to the customer, and a memory agent that owns the team's memory — every Mubit read
+      and write in the pane on the right is its decision, not the harness's.</div>
     </div>
     <form id="composer">
       <input id="box" autocomplete="off" placeholder="Write a customer message..." />
@@ -225,6 +233,7 @@ const chatEl = $("chat"), callsEl = $("calls"), boardEl = $("board"), boxEl = $(
 
 let busy = false, es = null, policyV = 1;
 let curAgent = null;   // the agent bubble currently receiving work lines
+let curMem = null;     // the memory-agent card currently receiving work lines
 const stats = { tickets: 0, resolved: 0, first: 0, esc: 0, lessons: 0 };
 
 function esc(s) {
@@ -306,6 +315,39 @@ function addNote(text) {
   d.className = "note-card";
   d.innerHTML = `<div class="who">Tier-2 note (internal)</div>${esc(text)}`;
   chatEl.appendChild(d); scroll(chatEl);
+}
+
+/* ---- memory-agent cards ---- */
+function memOpen(phase) {
+  curAgent = null;
+  const d = document.createElement("div");
+  d.className = "mem-card";
+  d.innerHTML = `<div class="who">Memory agent · ${esc(phase)}</div>`;
+  chatEl.appendChild(d);
+  curMem = { root: d, work: null };
+  scroll(chatEl);
+}
+function memWork(kind, text) {
+  if (!curMem) memOpen("update");
+  if (!curMem.work) {
+    curMem.work = document.createElement("div");
+    curMem.work.className = "work";
+    curMem.root.appendChild(curMem.work);
+  }
+  const d = document.createElement("div");
+  d.className = "w-" + kind;
+  d.textContent = text;
+  curMem.work.appendChild(d); scroll(chatEl);
+}
+function memClose(text) {
+  if (!curMem) return;
+  if (text) {
+    const d = document.createElement("div");
+    d.className = "mem-sum";
+    d.textContent = text;
+    curMem.root.appendChild(d);
+  }
+  curMem = null; scroll(chatEl);
 }
 function bumpStats(td) {
   stats.tickets += 1;
@@ -390,7 +432,7 @@ function renderBoard(rules) {
 /* ---- event stream ---- */
 function setBusy(b) {
   busy = b;
-  $("send").disabled = b; $("reflect-btn").disabled = b; $("reset-btn").disabled = b;
+  $("send").disabled = b; $("reset-btn").disabled = b;
   boxEl.disabled = b;
   const rb = $("run-btn");
   rb.textContent = b ? "Stop" : "Run tickets";
@@ -398,7 +440,9 @@ function setBusy(b) {
 }
 function handleEvent(ev) {
   if (ev.t === "run_start") sys(`playing ${ev.total} scripted tickets`);
-  else if (ev.t === "ticket_start") { curAgent = null; taskDivider(ev.id, ev.title); }
+  else if (ev.t === "ticket_start") { curAgent = null; curMem = null; taskDivider(ev.id, ev.title); }
+  else if (ev.t === "mem") { if (ev.state === "open") memOpen(ev.phase); else memClose(ev.text); }
+  else if (ev.t === "memwork") memWork(ev.kind, ev.text);
   else if (ev.t === "customer") customerBubble(ev.name, ev.text);
   else if (ev.t === "work") addWork(ev.kind, ev.text);
   else if (ev.t === "reply") addReply(ev.text);
@@ -455,22 +499,8 @@ $("policy").onclick = async () => {
     ? "refund policy is now v2 — a 30-day window on every plan. The agent is not told."
     : "refund policy is back on v1 — 14 days monthly, 30 days annual. The agent is not told.", "policy");
 };
-$("reflect-btn").onclick = async () => {
-  if (busy) return;
-  setBusy(true);
-  try {
-    const r = await fetch("/api/reflect", { method: "POST" });
-    const data = await r.json();
-    curAgent = null;
-    for (const ev of data.events || []) {
-      if (ev.t === "work") addWork(ev.kind, ev.text);
-      else if (ev.t === "mubit") addCall(ev);
-    }
-    if (data.board) renderBoard(data.board);
-  } finally { setBusy(false); }
-};
 function freshRun(data, label) {
-  chatEl.innerHTML = ""; callsEl.innerHTML = ""; curAgent = null;
+  chatEl.innerHTML = ""; callsEl.innerHTML = ""; curAgent = null; curMem = null;
   Object.assign(stats, { tickets: 0, resolved: 0, first: 0, esc: 0, lessons: 0 });
   $("stats").style.display = "none"; document.body.classList.remove("has-stats");
   policyV = data.policy; renderPolicy();

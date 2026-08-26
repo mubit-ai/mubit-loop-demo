@@ -75,6 +75,31 @@ switch (the same change the run script makes), Reflect (server-side
 distillation over the recorded outcomes), and New run (fresh run id,
 empty memory).
 
+## Two integration styles
+
+The support scenario ships in two versions that share the datasets, the
+backend, and the support agent:
+
+```bash
+./run_ui.sh          # v1 — harness-managed memory, http://127.0.0.1:7874
+./run_ui_agent.sh    # v2 — a memory agent,        http://127.0.0.1:7875
+```
+
+**v1 (`server.py` + `support.py`).** The application code decides when
+to call Mubit: recall at ticket start, store after the close, outcomes
+per applied lesson. Deterministic and minimal — the integration is a
+handful of fixed call sites.
+
+**v2 (`server_agent.py` + `agentic.py`).** A second LLM agent owns the
+memory. At ticket start it decides what to recall — it writes its own
+queries — and briefs the support agent; at ticket close it reads the
+verified events and decides what to store, which lessons to reinforce
+or fail, and what to retire. Its briefing and debrief appear as cards
+in the chat, and every Mubit call in the side pane is one of its
+decisions. The harness only validates its tool calls (known lesson ids,
+key format, caps). Same loop, same data in and out — the difference is
+who decides.
+
 ## The three acts
 
 1. **Cold start.** No stored rules. The first submission collects a
