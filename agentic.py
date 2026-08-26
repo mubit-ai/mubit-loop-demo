@@ -159,7 +159,7 @@ class MemoryAgent:
         transcript = list(parts)
         out: dict = {}
         for turn in range(1, max_turns + 1):
-            self.work("llm", f"memory agent turn {turn} — {MODEL}")
+            self.work("llm", f"turn {turn} — {MODEL}")
             raw = llm_json(system, "\n".join(transcript) + "\nReturn your next JSON turn.")
             out = raw if isinstance(raw, dict) else {}
             results = []
@@ -211,8 +211,8 @@ class MemoryAgent:
                 continue
             apply[key] = row
         summary = (out.get("summary") or "").strip() or (
-            f"briefing: apply {', '.join(sorted(apply))}" if apply
-            else "briefing: memory holds nothing relevant — the agent goes in cold")
+            f"apply {', '.join(sorted(apply))}" if apply
+            else "memory holds nothing relevant — the agent goes in cold")
         self.emit_evt({"t": "mem", "state": "close", "text": summary})
         return apply
 
@@ -290,7 +290,7 @@ class MemoryAgent:
         out = self._loop(DEBRIEF_SYSTEM.replace("{product}", support.CURRENT.product),
                          parts, act, max_turns=3)
         summary = (out.get("summary") or "").strip() or (
-            "debrief: memory updated" if (stored or deleted) else "debrief: nothing to change")
+            "memory updated" if (stored or deleted) else "nothing to change")
         self.emit_evt({"t": "mem", "state": "close", "text": summary})
         replaced = [k for k in stored if k in deleted]
         return {"stored": [k for k in stored if k not in deleted],

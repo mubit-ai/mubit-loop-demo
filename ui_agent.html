@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mubit feedback loop — memory agent</title>
+<title>Mubit feedback loop — v2</title>
 <style>
   :root {
     --bg: #f2f4f0; --card: #ffffff; --soft: #eef0ec; --line: #e4e7e1;
@@ -184,7 +184,7 @@
   </div>
   <div class="titles">
     <div class="k">Demo · v2</div>
-    <h1>Orbit support · Mubit memory agent</h1>
+    <h1>Orbit support · Mubit feedback loop</h1>
   </div>
   <span class="meta" id="run-id"></span>
   <span class="meta" id="model"></span>
@@ -205,9 +205,9 @@
   <section id="chat-col">
     <div id="chat">
       <div class="sys">Press Run tickets to play a day of scripted customer tickets, or write
-      a customer message yourself. Two agents work each ticket: a support agent that talks
-      to the customer, and a memory agent that owns the team's memory — every Mubit read
-      and write in the pane on the right is its decision, not the harness's.</div>
+      a customer message yourself. The agent knows nothing about this product's policies,
+      navigation, or bugs. Everything it learns moves through Mubit: what comes out of
+      memory before each reply, and what goes back in once the ticket closes.</div>
     </div>
     <form id="composer">
       <input id="box" autocomplete="off" placeholder="Write a customer message..." />
@@ -317,12 +317,14 @@ function addNote(text) {
   chatEl.appendChild(d); scroll(chatEl);
 }
 
-/* ---- memory-agent cards ---- */
+/* ---- mubit data-flow cards ---- */
 function memOpen(phase) {
   curAgent = null;
+  const lbl = phase === "briefing" ? "Mubit · data out"
+            : phase === "debrief" ? "Mubit · data in" : "Mubit";
   const d = document.createElement("div");
   d.className = "mem-card";
-  d.innerHTML = `<div class="who">Memory agent · ${esc(phase)}</div>`;
+  d.innerHTML = `<div class="who">${esc(lbl)}</div>`;
   chatEl.appendChild(d);
   curMem = { root: d, work: null };
   scroll(chatEl);
