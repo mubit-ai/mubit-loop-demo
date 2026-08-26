@@ -26,20 +26,54 @@ Each run uses a fresh Mubit run id, so each run starts with empty
 memory and learns from zero. The model is `gpt-5-mini` (override with
 `MODEL=`).
 
-## Chat UI
+## Chat UI — the support scenario
 
 ```bash
 ./run_ui.sh    # http://127.0.0.1:7874
 ```
 
-A browser version of the same loop (`server.py` + `ui.html`; the agent
-code is demo.py, unchanged). Left: a chat window with the sample
-expenses one click away. Right: the lesson board with its confidence
-band, and a feed of every SDK call the agent makes — method, latency,
-and a one-line summary; a row expands to the full request and response
-JSON. Header controls: the API policy switch (the same rule change as
-act 3), Reflect (server-side distillation over the recorded outcomes),
-and New run (fresh run id, empty memory).
+A browser demo of the same loop on a customer-support scenario
+(`server.py` + `ui.html` + `support.py`). Click **Run tickets**:
+scripted customers arrive in the chat window one ticket at a time and
+the agent works each one live. Left: the conversation, with the agent's
+activity (recall, tool calls, escalations, stored lessons) inside each
+reply bubble. Right: the lesson board with its confidence band, and a
+feed of every Mubit SDK call — method, latency, one-line summary; a row
+expands to the full request and response JSON. The composer stays live,
+so you can type your own customer message at any point.
+
+The products are fictional, so the model cannot know their facts. The
+agent learns only from verifiable events:
+
+- the helpdesk backend's deterministic verdicts (refund accepted or
+  denied under the active policy version)
+- tier-2 escalation notes — the scripted answer a senior agent sends
+  back when the agent decides to escalate
+- scripted customer follow-ups with deterministic triggers (a refund
+  that policy allows was not issued; a reply is missing the known
+  answer)
+
+Three ticket datasets ship with the demo (header dropdown; switching
+starts a fresh run with empty memory): Orbit (SaaS support), Maple &
+Twine (e-commerce), and Orbit day two (same product, new customers,
+steeper curve). Each is sequenced for a learning curve:
+
+1. **Cold.** The first ticket of each kind ends in an escalation or a
+   denied refund; the verified outcome is distilled and stored as a
+   lesson.
+2. **Warm.** The same question from a new customer is answered
+   first-touch from the recalled lesson. Each reuse is reported back
+   through `record_outcome` and confidence climbs.
+3. **Policy change.** The vendor widens the refund window and nobody
+   tells support. The stored lesson now gives wrong answers; a customer
+   dispute triggers a re-check against the billing system, the verified
+   result contradicts the lesson, and the lesson is retired and
+   replaced. The replacement wins the next ticket first-touch.
+
+A run plays 10 tickets in a few minutes. Header controls: the policy
+switch (the same change the run script makes), Reflect (server-side
+distillation over the recorded outcomes), and New run (fresh run id,
+empty memory).
 
 ## The three acts
 

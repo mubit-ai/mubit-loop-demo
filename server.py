@@ -1,9 +1,10 @@
-"""UI server for the feedback-loop demo.
+"""UI server for the feedback-loop demo (customer-support scenario).
 
-Serves ui.html and streams one chat message at a time over SSE. The
-agent loop is the one in demo.py — this file only routes its output:
+Serves ui.html and streams ticket playback over SSE. The scenario is
+support.py; this file only routes its output:
 
-- demo.line() is redirected into the event stream (the chat transcript)
+- SupportMemory work lines become the compact activity block inside
+  each agent chat bubble
 - the Mubit client is wrapped in TracedClient, which records every SDK
   method call with its latency, request, and response (the side pane)
 
@@ -23,11 +24,11 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 import demo as loop
-import expense_api
+import support
 
 app = FastAPI()
 
-_lock = threading.Lock()   # one task at a time
+_lock = threading.Lock()   # one playback at a time
 _sink = None               # active event sink (queue or list collector)
 _boot: list = []           # mubit events captured while no sink is active
 _counter = {"n": 0}
@@ -40,12 +41,9 @@ def _emit_mubit(evt: dict) -> None:
         _boot.append(evt)
 
 
-def _emit_line(channel: str, arrow: str, text: str, color: str = "0") -> None:
+def _emit_work(kind: str, text: str) -> None:
     if _sink is not None:
-        _sink.put({"t": "line", "ch": channel.strip(), "arrow": arrow.strip(), "text": text})
-
-
-loop.line = _emit_line  # the terminal display becomes the chat transcript
+        _sink.put({"t": "work", "kind": kind, "text": text})
 
 
 def _jsonable(obj):
@@ -100,7 +98,7 @@ class TracedClient:
         return wrapper
 
 
-def _new_memory() -> loop.Memory:
+def _new_memory() -> support.SupportMemory:
     from mubit import Client
 
     inner = Client(
@@ -108,7 +106,8 @@ def _new_memory() -> loop.Memory:
         api_key=os.environ["MUBIT_API_KEY"],
         transport="http",
     )
-    return loop.Memory(client=TracedClient(inner, _emit_mubit))
+    run_id = f"support-demo-{uuid.uuid4().hex[:8]}"
+    return support.SupportMemory(TracedClient(inner, _emit_mubit), run_id, _emit_work)
 
 
 MEMORY = _new_memory()
@@ -118,7 +117,7 @@ def _board() -> list[dict]:
     tc = MEMORY.client
     tc.enabled = False  # a UI refresh, not an agent call — keep the pane honest
     try:
-        rules = MEMORY.recall_rules(quiet=True)
+        lessons = MEMORY.recall(quiet=True)
     finally:
         tc.enabled = True
     return [
@@ -129,7 +128,7 @@ def _board() -> list[dict]:
             "reinforcement": r["reinforcement"],
             "fresh": r["fresh"],
         }
-        for k, r in sorted(rules.items())
+        for k, r in sorted(lessons.items())
     ]
 
 
@@ -145,42 +144,22 @@ class ListCollector:
         self.items.append(evt)
 
 
-@app.get("/")
-def index():
-    return FileResponse(os.path.join(os.path.dirname(__file__), "ui.html"))
-
-
-@app.get("/api/state")
-def state():
-    boot, _boot[:] = _boot[:], []
-    return {
-        "run_id": MEMORY.run_id,
-        "model": loop.MODEL,
-        "policy": expense_api.POLICY_VERSION,
-        "board": _board(),
-        "boot_events": boot,
-    }
-
-
-@app.get("/api/chat")
-def chat(text: str):
+def _stream(worker) -> StreamingResponse:
+    """Run `worker(q, stop)` in a thread; stream its queue as SSE."""
     global _sink
     if not _lock.acquire(blocking=False):
         def busy():
-            yield _sse({"t": "error", "msg": "a task is already running"})
-            yield _sse({"t": "task_done"})
+            yield _sse({"t": "error", "msg": "a run is already in progress"})
+            yield _sse({"t": "done"})
         return StreamingResponse(busy(), media_type="text/event-stream")
 
     q: queue.Queue = queue.Queue()
+    stop = threading.Event()
     _sink = q
-    _counter["n"] += 1
-    task = loop.Task(f"U-{_counter['n']:02d}", text.strip()[:400])
-    stats = {"tasks": 0, "first_try": 0, "tries": 0}
 
     def work():
         try:
-            q.put({"t": "task_start", "id": task.id, "text": task.text})
-            loop.handle(task, MEMORY, stats)
+            worker(q, stop)
         except Exception as exc:
             q.put({"t": "error", "msg": str(exc)})
         finally:
@@ -200,10 +179,14 @@ def chat(text: str):
                 if evt.get("t") == "__end__":
                     break
                 yield _sse(evt)
+                if evt.get("t") == "ticket_done":
+                    # tracing is off during the board read, so no pane
+                    # events leak from this UI refresh
+                    yield _sse({"t": "board", "rules": _board()})
             _sink = None
-            yield _sse({"t": "board", "rules": _board()})
-            yield _sse({"t": "task_done"})
+            yield _sse({"t": "done"})
         finally:
+            stop.set()
             _sink = None
             _lock.release()
 
@@ -211,10 +194,83 @@ def chat(text: str):
                              headers={"Cache-Control": "no-cache"})
 
 
+@app.get("/")
+def index():
+    return FileResponse(os.path.join(os.path.dirname(__file__), "ui.html"))
+
+
+@app.get("/api/state")
+def state():
+    boot, _boot[:] = _boot[:], []
+    return {
+        "run_id": MEMORY.run_id,
+        "model": loop.MODEL,
+        "policy": support.POLICY_VERSION,
+        "dataset": support.CURRENT.id,
+        "datasets": [{"id": d.id, "label": d.label} for d in support.DATASETS.values()],
+        "board": _board(),
+        "boot_events": boot,
+    }
+
+
+@app.post("/api/dataset")
+def switch_dataset(body: dict):
+    global MEMORY
+    if not _lock.acquire(blocking=False):
+        return JSONResponse({"error": "a run is already in progress"}, status_code=409)
+    try:
+        ds = support.use_dataset(str(body.get("id") or "orbit"))
+        _boot.clear()
+        _counter["n"] = 0
+        MEMORY = _new_memory()
+        boot, _boot[:] = _boot[:], []
+        return {"run_id": MEMORY.run_id, "policy": 1, "dataset": ds.id,
+                "label": ds.label, "boot_events": boot}
+    finally:
+        _lock.release()
+
+
+@app.get("/api/run")
+def run_all():
+    def worker(q, stop):
+        ds = support.CURRENT
+        totals = {"tickets": 0, "resolved": 0, "first_touch": 0,
+                  "escalated": 0, "lessons": 0}
+        q.put({"t": "run_start", "total": len(ds.tickets)})
+        for tk in ds.tickets:
+            if stop.is_set():
+                break
+            if tk.id == ds.policy_change_before:
+                support.set_policy(2)
+                q.put({"t": "policy_change", "version": 2,
+                       "text": ds.policy_change_text})
+            stats = support.run_ticket(tk, MEMORY, q.put, stop)
+            totals["tickets"] += 1
+            totals["resolved"] += int(stats["resolved"])
+            totals["first_touch"] += int(stats["first_touch"])
+            totals["escalated"] += int(stats["escalated"])
+            totals["lessons"] += stats["lessons_stored"]
+            time.sleep(0.8)
+        q.put({"t": "run_done", **totals})
+
+    return _stream(worker)
+
+
+@app.get("/api/chat")
+def chat(text: str):
+    _counter["n"] += 1
+    ticket = support.adhoc_ticket(_counter["n"], text.strip()[:500])
+
+    def worker(q, stop):
+        support.run_ticket(ticket, MEMORY, q.put, stop)
+
+    return _stream(worker)
+
+
 @app.post("/api/policy")
 def policy(body: dict):
     version = 2 if body.get("version") == 2 else 1
-    expense_api.set_policy(version)
+    support.set_policy(version)
     return {"policy": version}
 
 
@@ -222,11 +278,22 @@ def policy(body: dict):
 def reflect():
     global _sink
     if not _lock.acquire(blocking=False):
-        return JSONResponse({"error": "a task is already running"}, status_code=409)
+        return JSONResponse({"error": "a run is already in progress"}, status_code=409)
     collector = ListCollector()
     _sink = collector
     try:
-        MEMORY.reflect()
+        _emit_work("reflect", "reflect(last_n_items=30) — server-side distillation")
+        try:
+            r = MEMORY.client.reflect(last_n_items=30)
+            lessons = r.get("lessons")
+            n = len(lessons) if isinstance(lessons, list) else r.get("lessons_created", 0)
+            _emit_work("reflect", f"server distilled {n} lesson(s) from the recorded outcomes")
+            if isinstance(lessons, list):
+                for l in lessons[:2]:
+                    if isinstance(l, dict) and l.get("content"):
+                        _emit_work("reflect", f'e.g. "{l["content"][:100]}"')
+        except Exception as exc:
+            _emit_work("reflect", f"skipped ({exc})")
     finally:
         _sink = None
         _lock.release()
@@ -237,10 +304,10 @@ def reflect():
 def reset():
     global MEMORY, _sink
     if not _lock.acquire(blocking=False):
-        return JSONResponse({"error": "a task is already running"}, status_code=409)
+        return JSONResponse({"error": "a run is already in progress"}, status_code=409)
     try:
         _boot.clear()
-        expense_api.set_policy(1)
+        support.reset_backend()
         _counter["n"] = 0
         MEMORY = _new_memory()
         boot, _boot[:] = _boot[:], []
