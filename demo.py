@@ -134,8 +134,10 @@ def bucket_for_field(field: str) -> str:
 
 
 class Memory:
-    def __init__(self) -> None:
-        self.client = Client(
+    def __init__(self, client=None) -> None:
+        # server.py injects a traced client here; the terminal demo
+        # builds a plain one.
+        self.client = client or Client(
             endpoint=os.environ.get("MUBIT_ENDPOINT", "http://127.0.0.1:3970"),
             api_key=os.environ["MUBIT_API_KEY"],
             transport="http",

@@ -1,2 +1,4 @@
 mubit-sdk>=0.13.1
 openai>=1.50
+fastapi>=0.110
+uvicorn>=0.29

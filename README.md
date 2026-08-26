@@ -26,6 +26,21 @@ Each run uses a fresh Mubit run id, so each run starts with empty
 memory and learns from zero. The model is `gpt-5-mini` (override with
 `MODEL=`).
 
+## Chat UI
+
+```bash
+./run_ui.sh    # http://127.0.0.1:7874
+```
+
+A browser version of the same loop (`server.py` + `ui.html`; the agent
+code is demo.py, unchanged). Left: a chat window with the sample
+expenses one click away. Right: the lesson board with its confidence
+band, and a feed of every SDK call the agent makes — method, latency,
+and a one-line summary; a row expands to the full request and response
+JSON. Header controls: the API policy switch (the same rule change as
+act 3), Reflect (server-side distillation over the recorded outcomes),
+and New run (fresh run id, empty memory).
+
 ## The three acts
 
 1. **Cold start.** No stored rules. The first submission collects a

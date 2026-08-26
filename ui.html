@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mubit feedback loop</title>
+<style>
+  :root {
+    --bg: #f2f4f0; --card: #ffffff; --soft: #eef0ec; --line: #e4e7e1;
+    --text: #191d19; --dim: #6d7570; --faint: #9aa29c;
+    --accent: #2f6b46; --accent-soft: #e7f0e6;
+    --teal: #0e7490; --green: #1a7f37; --red: #b3261e; --amber: #9a6700;
+    --purple: #6f42c1;
+    --shadow: 0 1px 2px rgba(20, 24, 20, .05), 0 4px 14px rgba(20, 24, 20, .05);
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.5 var(--sans); }
+
+  header {
+    display: flex; align-items: center; gap: 12px; padding: 10px 18px;
+    background: var(--card); border-bottom: 1px solid var(--line);
+  }
+  .tile {
+    width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft);
+    display: flex; align-items: center; justify-content: center; flex: none;
+  }
+  .tile svg { width: 16px; height: 16px; stroke: var(--accent); fill: none; stroke-width: 1.6; }
+  header .titles .k {
+    font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint);
+  }
+  header .titles h1 { font-size: 15px; font-weight: 650; line-height: 1.2; }
+  header .meta { font: 12px var(--mono); color: var(--faint); margin-left: 6px; }
+  header .spacer { flex: 1; }
+  .pill, button {
+    font: 12.5px var(--sans); font-weight: 500; color: var(--text);
+    background: var(--card); border: 1px solid var(--line); border-radius: 999px;
+    padding: 6px 14px; cursor: pointer; box-shadow: var(--shadow);
+  }
+  .pill:hover, button:hover { border-color: var(--faint); }
+  button:disabled { opacity: .45; cursor: default; box-shadow: none; }
+  .pill.v2 { color: var(--amber); border-color: #e5cfa0; background: #fdf8ec; }
+
+  main {
+    display: grid; grid-template-columns: minmax(0, 1fr) 430px;
+    height: calc(100% - 51px);
+  }
+
+  /* ---- chat column ---- */
+  #chat-col { display: flex; flex-direction: column; min-width: 0; }
+  #chat { flex: 1; overflow-y: auto; padding: 20px 22px 8px; }
+  .msg { max-width: 94%; margin: 0 0 12px; }
+  .msg.user {
+    margin-left: auto; background: var(--accent-soft); border: 1px solid #d6e5d4;
+    border-radius: 12px 12px 3px 12px; padding: 8px 13px; width: fit-content;
+    max-width: 78%;
+  }
+  .msg.agent {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: var(--shadow); padding: 10px 12px;
+    font: 12px/1.65 var(--mono); overflow-x: auto;
+  }
+  .msg.agent .hd {
+    color: var(--faint); font: 600 10.5px var(--sans); letter-spacing: .08em;
+    text-transform: uppercase; margin-bottom: 5px;
+  }
+  .tl { display: flex; gap: 8px; white-space: pre-wrap; word-break: break-word; }
+  .tl .g { color: var(--faint); min-width: 62px; text-align: right; flex: none; }
+  .tl .a { color: var(--faint); min-width: 16px; flex: none; }
+  .tl .x { color: #3a423c; }
+  .tl.ch-recall .x, .tl.ch-remember .x, .tl.ch-outcome .x, .tl.ch-reflect .x { color: var(--teal); }
+  .tl.ch-submit .x { color: var(--amber); }
+  .tl.ch-api .x { color: var(--red); }
+  .tl.ch-api.ok .x { color: var(--green); }
+  .tl.ch-retire .x { color: var(--purple); }
+  .tl.ch-agent .x { color: var(--amber); }
+  .tl.ch-llm .x { color: var(--dim); }
+  .tl.ch-sum .x { color: var(--text); font-weight: 700; }
+  .sys { text-align: center; color: var(--dim); font-size: 12.5px; margin: 10px auto; max-width: 60ch; }
+  .sys.err { color: var(--red); }
+
+  #chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 22px 0; }
+  #chips .chip {
+    font: 12px var(--sans); color: var(--dim); background: var(--card);
+    border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px;
+    cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; box-shadow: none;
+  }
+  #chips .chip:hover { color: var(--text); border-color: var(--faint); }
+
+  #composer { display: flex; gap: 8px; padding: 12px 22px 16px; }
+  #composer input {
+    flex: 1; background: var(--card); color: var(--text);
+    border: 1px solid var(--line); border-radius: 999px; padding: 10px 16px;
+    font: 14px var(--sans); outline: none; box-shadow: var(--shadow);
+  }
+  #composer input:focus { border-color: var(--accent); }
+  #composer button { padding: 10px 20px; background: var(--accent); color: #fff; border-color: var(--accent); }
+  #composer button:hover { filter: brightness(1.06); }
+  #composer button:disabled { background: var(--accent); }
+
+  /* ---- mubit pane ---- */
+  #pane {
+    border-left: 1px solid var(--line); background: var(--card);
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  .pane-hd {
+    display: flex; align-items: baseline; gap: 8px; padding: 12px 16px 8px;
+    font: 600 10.5px var(--sans); letter-spacing: .1em; text-transform: uppercase;
+    color: var(--faint);
+  }
+  .pane-hd .n { font: 11px var(--mono); text-transform: none; letter-spacing: 0; font-weight: 400; }
+  #memory-sec { border-bottom: 1px solid var(--line); max-height: 34%; overflow-y: auto; flex: none; }
+  #board { padding: 0 12px 8px; }
+  .rule { border: 1px solid var(--line); border-radius: 9px; margin-bottom: 6px; background: var(--card); }
+  .rule-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; }
+  .chev { flex: none; width: 8px; color: var(--faint); font-size: 10px; transition: transform .12s; }
+  .open > .rule-head .chev, .call.open .chev { transform: rotate(90deg); }
+  .rule-head .k { font: 12px var(--mono); color: var(--text); min-width: 62px; }
+  .bar { flex: 1; height: 5px; background: var(--soft); border-radius: 3px; overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: 3px; }
+  .rule.high .bar i { background: #55a06c; }
+  .rule.medium .bar i { background: #d9a53f; }
+  .rule.low .bar i { background: #d06a63; }
+  .rule-head .cf { font: 11px var(--mono); color: var(--dim); width: 34px; text-align: right; }
+  .rule-head .bd { font: 500 10.5px var(--sans); width: 92px; text-align: right; }
+  .rule.high .bd { color: var(--green); }
+  .rule.medium .bd { color: var(--amber); }
+  .rule.low .bd { color: var(--red); }
+  .rule-text { display: none; padding: 2px 10px 9px 26px; font: 11.5px/1.5 var(--mono); color: var(--dim); }
+  .rule.open .rule-text { display: block; }
+  #board .empty { color: var(--faint); font-size: 12.5px; padding: 2px 6px 10px; }
+  .legend { color: var(--faint); font-size: 10.5px; padding: 0 16px 10px; }
+
+  #calls-sec { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  #calls { flex: 1; overflow-y: auto; padding: 0 12px 14px; }
+  .task-div {
+    display: flex; gap: 8px; align-items: baseline; background: var(--soft);
+    border-radius: 8px; padding: 5px 11px; margin: 10px 0 6px;
+    font: 600 11px var(--sans); letter-spacing: .04em; color: var(--dim);
+  }
+  .task-div b { font: 600 11px var(--mono); color: var(--text); }
+  .task-div span { font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .call { border: 1px solid var(--line); border-radius: 9px; margin-bottom: 5px; background: var(--card); }
+  .call-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; }
+  .call-head .m { font: 12px var(--mono); color: var(--accent); min-width: 128px; flex: none; font-weight: 600; }
+  .call-head .sum {
+    flex: 1; font: 11px var(--mono); color: var(--dim); overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+  }
+  .call-head .ms { font: 11px var(--mono); color: var(--faint); flex: none; }
+  .call-head .ms.slow { color: var(--amber); }
+  .call.err .call-head .m { color: var(--red); }
+  .call-body { display: none; border-top: 1px solid var(--line); padding: 8px 10px 10px; }
+  .call.open .call-body { display: block; }
+  .io-lbl {
+    font: 600 10px var(--sans); letter-spacing: .1em; text-transform: uppercase;
+    color: var(--faint); margin: 4px 0 3px;
+  }
+  .call-body pre {
+    font: 11px/1.5 var(--mono); color: var(--text); background: #f7f8f6;
+    border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px;
+    overflow: auto; max-height: 240px; white-space: pre-wrap; word-break: break-word;
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="tile" aria-hidden="true">
+    <svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/></svg>
+  </div>
+  <div class="titles">
+    <div class="k">Demo</div>
+    <h1>Mubit feedback loop</h1>
+  </div>
+  <span class="meta" id="run-id"></span>
+  <span class="meta" id="model"></span>
+  <span class="spacer"></span>
+  <span class="pill" id="policy" title="Switch the expense service's hidden date rule. The agent is not told.">API policy v1</span>
+  <button id="reflect-btn" title="Server-side distillation over the recorded outcomes">Reflect</button>
+  <button id="reset-btn">New run</button>
+</header>
+<main>
+  <section id="chat-col">
+    <div id="chat">
+      <div class="sys">Describe an expense, or pick one below. The agent submits it to an
+      internal API whose validation rules it was never given. Memory starts empty.</div>
+    </div>
+    <div id="chips"></div>
+    <form id="composer">
+      <input id="box" autocomplete="off" placeholder="Describe an expense..." />
+      <button id="send" type="submit">Send</button>
+    </form>
+  </section>
+  <aside id="pane">
+    <div id="memory-sec">
+      <div class="pane-hd">Memory <span class="n" id="mem-n"></span></div>
+      <div id="board"><div class="empty">no lessons yet</div></div>
+      <div class="legend">band: &ge;0.75 trusted &middot; &ge;0.5 applied in prompts &middot; &lt;0.5 quarantined</div>
+    </div>
+    <div id="calls-sec">
+      <div class="pane-hd">Mubit calls <span class="n">latency &middot; click a row for the full data</span></div>
+      <div id="calls"></div>
+    </div>
+  </aside>
+</main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const chatEl = $("chat"), callsEl = $("calls"), boardEl = $("board"), boxEl = $("box");
+
+const SAMPLES = [
+  "Team lunch with the client at Nobu Bombay, 12 Aug, $84.20",
+  "Return flight BOM-SFO for the customer visit, booked 14 Aug, $612.50",
+  "A 27-inch monitor for the new hire, ordered 18 Aug, $189.00",
+  "Airport taxi, 21 Aug, $23.75",
+  "Annual design-tool subscription renewal, 22 Aug, $340.00",
+  "Team dinner after the release, 22 Aug, $156.40",
+  "Client coffee at Blue Tokai, 25 Aug, $12.80",
+  "Monitor arm for the new hire's desk, 26 Aug, $45.00",
+];
+
+let busy = false, es = null, agentBubble = null, policyV = 1;
+
+function esc(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function scroll(el) { el.scrollTop = el.scrollHeight; }
+function sys(text, err) {
+  const d = document.createElement("div");
+  d.className = "sys" + (err ? " err" : "");
+  d.textContent = text;
+  chatEl.appendChild(d); scroll(chatEl);
+}
+
+/* ---- chat transcript ---- */
+function userBubble(text) {
+  const d = document.createElement("div");
+  d.className = "msg user"; d.textContent = text;
+  chatEl.appendChild(d); scroll(chatEl);
+}
+function newAgentBubble(label) {
+  agentBubble = document.createElement("div");
+  agentBubble.className = "msg agent";
+  if (label) agentBubble.innerHTML = `<div class="hd">${esc(label)}</div>`;
+  chatEl.appendChild(agentBubble); scroll(chatEl);
+}
+function addLine(ev) {
+  if (!agentBubble) newAgentBubble("");
+  const ch = ev.ch === "=" ? "sum" : ev.ch;
+  const d = document.createElement("div");
+  d.className = "tl ch-" + ch;
+  if (ch === "api" && /^201 /.test(ev.text)) d.classList.add("ok");
+  d.innerHTML = `<span class="g">${esc(ev.ch === "=" ? "" : ev.ch)}</span>` +
+                `<span class="a">${esc(ev.arrow || "")}</span>` +
+                `<span class="x">${esc(ev.text)}</span>`;
+  agentBubble.appendChild(d); scroll(chatEl);
+}
+
+/* ---- mubit call pane ---- */
+function callSummary(m, req) {
+  try {
+    if (m === "recall") return `query=${JSON.stringify(req.query || "")} limit=${req.limit || ""}`;
+    if (m === "remember") return (req.content || "").slice(0, 90);
+    if (m === "record_outcome") return `${req.outcome} signal=${req.signal} ref=${(req.reference_id || "").slice(0, 8)}`;
+    if (m === "record_step_outcome") return `${req.step_id || ""} ${req.outcome || ""} signal=${req.signal}`;
+    if (m === "delete_lesson") { const p = (req.args || [])[0] || {}; return `lesson ${(p.lesson_id || "").slice(0, 8)}`; }
+    if (m === "reflect") return `last_n_items=${req.last_n_items}`;
+    if (m === "set_run_id") return (req.args || [])[0] || "";
+  } catch (e) { /* fall through */ }
+  return JSON.stringify(req).slice(0, 90);
+}
+function taskDivider(id, text) {
+  const d = document.createElement("div");
+  d.className = "task-div";
+  d.innerHTML = `<b>${esc(id)}</b><span>${esc(text.slice(0, 46))}</span>`;
+  callsEl.appendChild(d); scroll(callsEl);
+}
+function addCall(ev) {
+  const d = document.createElement("div");
+  d.className = "call" + (ev.error ? " err" : "");
+  const slow = ev.ms >= 1000 ? " slow" : "";
+  d.innerHTML =
+    `<div class="call-head">
+       <span class="chev">&#9654;</span>
+       <span class="m">${esc(ev.method)}</span>
+       <span class="sum">${esc(callSummary(ev.method, ev.request || {}))}</span>
+       <span class="ms${slow}">${ev.ms} ms</span>
+     </div>
+     <div class="call-body">
+       <div class="io-lbl">in</div>
+       <pre>${esc(JSON.stringify(ev.request ?? {}, null, 2))}</pre>
+       <div class="io-lbl">out</div>
+       <pre>${esc(JSON.stringify(ev.error ? { error: ev.error } : ev.response ?? null, null, 2))}</pre>
+     </div>`;
+  d.querySelector(".call-head").onclick = () => d.classList.toggle("open");
+  callsEl.appendChild(d); scroll(callsEl);
+}
+
+/* ---- lesson board ---- */
+function renderBoard(rules) {
+  $("mem-n").textContent = rules.length ? `${rules.length} lesson(s)` : "";
+  if (!rules.length) { boardEl.innerHTML = '<div class="empty">no lessons yet</div>'; return; }
+  boardEl.innerHTML = "";
+  for (const r of rules) {
+    const bandCls = r.confidence >= 0.75 ? "high" : r.confidence >= 0.5 ? "medium" : "low";
+    const bandLbl = bandCls === "high" ? "trusted" : bandCls === "medium" ? "applied" : "quarantined";
+    const extra = r.fresh ? " · new" : (r.reinforcement != null ? ` · x${r.reinforcement}` : "");
+    const d = document.createElement("div");
+    d.className = "rule " + bandCls;
+    d.innerHTML =
+      `<div class="rule-head">
+         <span class="chev">&#9654;</span>
+         <span class="k">${esc(r.key)}</span>
+         <div class="bar"><i style="width:${Math.round(r.confidence * 100)}%"></i></div>
+         <span class="cf">${r.confidence.toFixed(2)}</span>
+         <span class="bd">${bandLbl}${esc(extra)}</span>
+       </div>
+       <div class="rule-text">${esc(r.text)}</div>`;
+    d.querySelector(".rule-head").onclick = () => d.classList.toggle("open");
+    boardEl.appendChild(d);
+  }
+}
+
+/* ---- sending ---- */
+function setBusy(b) {
+  busy = b;
+  $("send").disabled = b; $("reflect-btn").disabled = b; $("reset-btn").disabled = b;
+  boxEl.disabled = b;
+}
+function send(text) {
+  if (busy || !text.trim()) return;
+  setBusy(true);
+  userBubble(text.trim());
+  agentBubble = null;
+  es = new EventSource(`/api/chat?text=${encodeURIComponent(text.trim())}`);
+  es.onmessage = (m) => {
+    const ev = JSON.parse(m.data);
+    if (ev.t === "task_start") { newAgentBubble(ev.id); taskDivider(ev.id, ev.text); }
+    else if (ev.t === "line") addLine(ev);
+    else if (ev.t === "mubit") addCall(ev);
+    else if (ev.t === "board") renderBoard(ev.rules);
+    else if (ev.t === "error") sys(ev.msg, true);
+    else if (ev.t === "task_done") { es.close(); es = null; setBusy(false); boxEl.focus(); }
+  };
+  es.onerror = () => { if (es) { es.close(); es = null; } setBusy(false); sys("stream interrupted", true); };
+}
+
+$("composer").onsubmit = (e) => { e.preventDefault(); const t = boxEl.value; boxEl.value = ""; send(t); };
+
+for (const s of SAMPLES) {
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "chip"; b.textContent = s;
+  b.onclick = () => { boxEl.value = s; boxEl.focus(); };
+  $("chips").appendChild(b);
+}
+
+/* ---- header actions ---- */
+function renderPolicy() {
+  const p = $("policy");
+  p.textContent = `API policy v${policyV}`;
+  p.classList.toggle("v2", policyV === 2);
+}
+$("policy").onclick = async () => {
+  if (busy) return;
+  policyV = policyV === 1 ? 2 : 1;
+  await fetch("/api/policy", { method: "POST", headers: { "Content-Type": "application/json" },
+                               body: JSON.stringify({ version: policyV }) });
+  renderPolicy();
+  sys(policyV === 2
+    ? "expense service is now v2 — dates use YYYY-MM-DD. The agent is not told."
+    : "expense service is back on v1 — dates use DD.MM.YYYY. The agent is not told.");
+};
+$("reflect-btn").onclick = async () => {
+  if (busy) return;
+  setBusy(true);
+  try {
+    const r = await fetch("/api/reflect", { method: "POST" });
+    const data = await r.json();
+    agentBubble = null; newAgentBubble("reflect");
+    for (const ev of data.events || []) {
+      if (ev.t === "line") addLine(ev);
+      else if (ev.t === "mubit") addCall(ev);
+    }
+    if (data.board) renderBoard(data.board);
+  } finally { setBusy(false); }
+};
+$("reset-btn").onclick = async () => {
+  if (busy) return;
+  const r = await fetch("/api/reset", { method: "POST" });
+  const data = await r.json();
+  chatEl.innerHTML = ""; callsEl.innerHTML = ""; agentBubble = null;
+  policyV = data.policy; renderPolicy();
+  $("run-id").textContent = data.run_id;
+  renderBoard([]);
+  sys(`new run ${data.run_id} — memory is empty`);
+  for (const ev of data.boot_events || []) if (ev.t === "mubit") addCall(ev);
+};
+
+/* ---- init ---- */
+(async () => {
+  const r = await fetch("/api/state");
+  const data = await r.json();
+  $("run-id").textContent = data.run_id;
+  $("model").textContent = data.model;
+  policyV = data.policy; renderPolicy();
+  renderBoard(data.board || []);
+  for (const ev of data.boot_events || []) if (ev.t === "mubit") addCall(ev);
+  boxEl.focus();
+})();
+</script>
+</body>
+</html>
